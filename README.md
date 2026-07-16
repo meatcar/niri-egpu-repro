@@ -4,8 +4,7 @@
 Failing NixOS test, showing Niri never cleans up the outputs of a hot-removed GPU.
 
 The [`repro` workflow](https://github.com/meatcar/niri-egpu-repro/actions/workflows/repro.yml)
-runs this weekly against Niri main. **A red run means the bug still
-reproduces**.
+runs weekly against Niri main.
 
 ## Instructions
 

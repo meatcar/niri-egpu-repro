@@ -26,13 +26,18 @@
         doCheck = false;
         cargoBuildType = "debug";
       });
+
+      niri-session-traced = pkgs.writeShellScript "niri-session-traced" ''
+        export RUST_LOG=niri=trace
+        exec ${pkgs.lib.getExe' niri-vm "niri-session"}
+      '';
     in
     {
       checks.${system}.repro = pkgs.testers.runNixOSTest {
         name = "niri-gpu-hot-remove";
 
         nodes.machine =
-          { lib, ... }:
+          { ... }:
           {
             programs.niri.enable = true;
             programs.niri.package = niri-vm;
@@ -46,7 +51,7 @@
             services.greetd = {
               enable = true;
               settings.default_session = {
-                command = lib.getExe' niri-vm "niri-session";
+                command = niri-session-traced;
                 user = "alice";
               };
             };
@@ -60,31 +65,47 @@
           };
 
         testScript = ''
-          count_outputs_cmd = (
-            "NIRI_SOCKET=$(ls /run/user/1000/niri.wayland-*.sock | head -n1)"
-            " niri msg outputs | grep -c '^Output'"
-          )
+          def dump(title, cmd):
+              status, out = machine.execute(cmd)
+              print(f"=== {title} (exit {status}) ===\n{out}")
 
-          machine.wait_for_unit("multi-user.target")
-          machine.wait_until_succeeds("ls /run/user/1000/niri.wayland-*.sock", timeout=120)
+          def cmd(socket, cmd):
+              return f"NIRI_SOCKET={socket} {cmd}"
 
-          # ensure both GPUs' outputs are present
-          machine.wait_until_succeeds(f"[ $({count_outputs_cmd}) -eq 2 ]", timeout=120)
-          num_outputs = int(machine.succeed(count_outputs_cmd).strip())
+          count_outputs_cmd = "niri msg outputs | grep -c '^Output'"
 
-          # remove a GPU
-          machine.succeed("echo 1 > /sys/bus/pci/devices/0000:00:${gpu2}.0/remove")
+          socket = None
+          try:
+              machine.wait_for_unit("multi-user.target")
 
-          machine.sleep(3)
+              # resolve niri's IPC socket
+              machine.wait_until_succeeds("ls /run/user/1000/niri.wayland-*.sock")
+              socket = machine.succeed("ls /run/user/1000/niri.wayland-*.sock").strip()
 
-          # Niri must resolve the removed device
-          machine.fail("journalctl --no-pager | grep 'error creating DrmNode'")
+              # wait until both GPUs' outputs are present
+              machine.wait_until_succeeds(cmd(socket, f"[ $({count_outputs_cmd}) -eq 2 ]"))
 
-          # The removed GPU's outputs must disappear
-          machine.wait_until_succeeds(f"[ $({count_outputs_cmd}) -lt {num_outputs} ]", timeout=60)
+              # capture drm hotplug events around the removal
+              machine.succeed(
+                  "udevadm monitor --kernel --udev --property --subsystem-match=drm"
+                  " > /tmp/udev.log 2>&1 &"
+              )
 
-          # Niri must still be alive on the remaining GPU
-          machine.succeed(f"[ $({count_outputs_cmd}) -ge 1 ]")
+              # remove a GPU
+              machine.succeed("echo 1 > /sys/bus/pci/devices/0000:00:${gpu2}.0/remove")
+
+              machine.sleep(3)
+
+              # Niri must resolve the removed device
+              machine.fail("journalctl --no-pager | grep 'error creating DrmNode'")
+
+              # The removed GPU's outputs must disappear
+              machine.wait_until_succeeds(cmd(socket, f"[ $({count_outputs_cmd}) -eq 1 ]"), timeout=60)
+          finally:
+              # dumps go to stdout
+              dump("outputs after removal", cmd(socket, "niri msg outputs"))
+              dump("drm udev events", "pkill udevadm; cat /tmp/udev.log")
+              dump("niri log (RUST_LOG=niri=trace)", "journalctl --no-pager -t niri")
         '';
       };
     };

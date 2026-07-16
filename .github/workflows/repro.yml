@@ -27,11 +27,25 @@ jobs:
       - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
       - name: Track upstream
-        run: nix flake update
+        run: |
+          nix flake update
+          nix flake metadata --json \
+            | jq -r '"tested niri rev: " + .locks.nodes.niri.locked.rev' \
+            >> "$GITHUB_STEP_SUMMARY"
 
       # fails while the bug is present; that red run IS the repro
       - name: Build repro check
         run: nix build .#checks.x86_64-linux.repro -L 2>&1 | tee build.log
+
+      # debug bundle for upstream: exact inputs + driver log with niri trace
+      - name: Export debug artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: repro-debug-${{ github.run_id }}
+          path: |
+            build.log
+            flake.lock
 
       # only reached when the check passes, i.e. the bug is fixed upstream
       - name: Retire tripwire
