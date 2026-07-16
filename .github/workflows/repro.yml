@@ -15,10 +15,10 @@ jobs:
       contents: read
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       # KVM is available by default on public-repo runners
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
       - name: Track upstream
         run: nix flake update
