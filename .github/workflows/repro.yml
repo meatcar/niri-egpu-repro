@@ -8,6 +8,12 @@ on:
     # self-disables once upstream fixes it
     - cron: "0 6 * * 1"
 
+# force shell to be `bash -eo pipefail`, see:
+# https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+defaults:
+  run:
+    shell: bash
+
 jobs:
   repro:
     runs-on: ubuntu-latest
