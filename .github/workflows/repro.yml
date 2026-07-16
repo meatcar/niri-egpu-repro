@@ -1,0 +1,45 @@
+name: repro
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    # weekly against fresh niri main: red while the bug exists,
+    # self-disables once upstream fixes it
+    - cron: "0 6 * * 1"
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # KVM is available by default on public-repo runners
+      - uses: cachix/install-nix-action@v31
+
+      - name: Track upstream
+        run: nix flake update
+
+      # fails while the bug is present; that red run IS the repro
+      - name: Build repro check
+        run: nix build .#checks.x86_64-linux.repro -L 2>&1 | tee build.log
+
+      # only reached when the check passes, i.e. the bug is fixed upstream
+      - name: Retire tripwire
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "::notice::fixed upstream, our job is done."
+          gh workflow disable repro.yml
+
+      - name: Diagnose
+        if: failure()
+        run: |
+          if grep -q "error creating DrmNode'.* unexpectedly succeeded" build.log; then
+            echo "::notice::bug reproduced! niri failed to resolve the removed device."
+          else
+            echo "::warning::couldn't reproduce the bug. Problem with the test?"
+          fi

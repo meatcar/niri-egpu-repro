@@ -1,0 +1,13 @@
+--- a/src/backend/tty.rs
++++ b/src/backend/tty.rs
+@@ -784,8 +784,9 @@
+             // Software EGL devices (e.g., llvmpipe/softpipe) are rejected for now. They have some
+             // problems (segfault on importing dmabufs from other renderers) and need to be
+             // excluded from some places like DRM leasing.
++            // NOTE: Patched for VM tests to allow software EGL, it's all a VM has.
+             ensure!(
+-                !egl_device.is_software(),
++                !egl_device.is_software() || true,
+                 "software EGL renderers are skipped"
+             );
+ 
